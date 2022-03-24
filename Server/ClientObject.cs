@@ -11,6 +11,7 @@ namespace Server
         NetworkStream stream = null;
         private string userName = "";
         public TcpClient client;
+        static readonly object _locker = new();
         public ClientObject(TcpClient tcpClient)
         {
             client = tcpClient;
@@ -46,31 +47,31 @@ namespace Server
             StringBuilder builder = new StringBuilder();
             DataDecoder(stream, data, ref builder);
             userName = builder.ToString();
-            Console.WriteLine(userName);
-            Console.WriteLine($"Подключился пользователь: {userName}");
+            //Console.WriteLine($"Подключился пользователь: {userName}");
         }
 
         public void Request()
         {
-            
+            byte[] data = new byte[64]; // буфер для получаемых данных
+            StringBuilder builder = new StringBuilder();
             try
             {
-                
-                byte[] data = new byte[64]; // буфер для получаемых данных
-                StringBuilder builder = new StringBuilder();
-                Console.WriteLine($"Максимальное число потоков {Program.maxRequest}");
-                
                 while (true)
                 {
                     builder.Clear();
                     DataDecoder(stream, data, ref builder);
-                    // получаем сообщение
-                    if (Program.queue<Program.maxRequest)
+                    Thread.Sleep(50);
+                    lock (_locker)
                     {
-                        Console.WriteLine(++Program.queue);
-                        Thread.Sleep(1000 * 5);
+                        Program.queue++;
+                        //Thread.Sleep(50);
+                        Console.WriteLine($"Queue: {Program.queue}; ThreadID: {Thread.CurrentThread.ManagedThreadId}");
+                    }
+                    if (Program.queue <= Program.maxRequest)
+                    {
                         string message = builder.ToString();
                         Console.WriteLine($"{userName}: {message}");
+                        Thread.Sleep(1000);
                         message = Regex.Replace(message, @"[^\dа-яёА-ЯЁ]", "");
                         string palindromOrNot = "Ваше сообщение не явлется палиндромом";
                         if (CheckPalindrom(message))
@@ -78,15 +79,16 @@ namespace Server
                             palindromOrNot = "Ваше сообщение является палиндромом";
                         }
                         data = Encoding.Unicode.GetBytes(palindromOrNot);
-                        stream.Write(data, 0, data.Length);
-                        Console.WriteLine(--Program.queue);
+                        
                     }
                     else
                     {
                         string error = "Количество запросов превысило возможности сервера. Прошу повторить попытку позже или уменьшить количество запросов\n";
                         data = Encoding.Unicode.GetBytes(error);
-                        stream.Write(data, 0, data.Length);
                     }
+                    stream.Write(data, 0, data.Length);
+                    Program.queue--;
+                    Console.WriteLine(Program.queue);
                 }
             }
             catch (Exception ex)
